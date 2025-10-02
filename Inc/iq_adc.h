@@ -3,9 +3,11 @@
 #include <stdint.h>
 #include "stm32f1xx_hal.h"
 
-// Raised from 100000 to ~166.7 kS/s (timer base 1MHz, ARR=5 -> 1e6/(5+1) = 166666.6)
-#define IQ_SAMPLE_RATE_HZ 166667U
-#define IQ_BUFFER_PAIRS   1024U
+// Target complex sample rate (I/Q pairs per second). Adjust as needed.
+// NOTE: Actual timer configuration will search prescaler/period for the closest
+// achievable rate to this target given TIM3 input clock and 16-bit limits.
+#define IQ_SAMPLE_RATE_HZ 220000U
+#define IQ_BUFFER_PAIRS   1536U
 #define IQ_DMA_LENGTH     (IQ_BUFFER_PAIRS*2U)
 
 typedef void (*iq_callback_t)(uint32_t *data, uint32_t count, uint8_t index);

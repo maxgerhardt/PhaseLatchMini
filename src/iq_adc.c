@@ -30,24 +30,51 @@ static void adc_gpio_init(void) {
 static void timer_trigger_init(void) {
   __HAL_RCC_TIM3_CLK_ENABLE();
   uint32_t timer_clk = HAL_RCC_GetPCLK1Freq();
-  // If APB1 prescaler !=1 timer clock doubles
+  // If APB1 prescaler !=1 timer clock doubles (TIMx clocking on APB1 domain quirk)
   if(((RCC->CFGR & RCC_CFGR_PPRE1)>>8) > 0) timer_clk *= 2U;
-  uint32_t target = IQ_SAMPLE_RATE_HZ;
-  // Aim for: timer_clk / (PSC+1) / (ARR+1) = target
-  uint32_t prescaler = (timer_clk / 1000000U) - 1U; // 1MHz base
-  uint32_t period = (1000000U / target) - 1U;
+
+  uint32_t target = IQ_SAMPLE_RATE_HZ; // desired samples per second
+
+  // Strategy: iterate possible prescalers to find an ARR within 16-bit and
+  // frequency closest to target. Limit search to keep it quick.
+  uint32_t best_psc = 0, best_arr = 0, best_diff = 0xFFFFFFFF, best_rate = 0;
+  for(uint32_t psc = 0; psc < 0xFFFF; ++psc) {
+    uint32_t tclk_div = timer_clk / (psc + 1U);
+    if(tclk_div < target) break; // further prescalers only lower tclk_div
+    uint32_t arr = (tclk_div / target);
+    if(arr == 0) continue;
+    if(arr > 0) arr -= 1U; // ARR is zero-based
+    if(arr > 0xFFFF) continue;
+    uint32_t achieved = tclk_div / (arr + 1U);
+    uint32_t diff = (achieved > target) ? (achieved - target) : (target - achieved);
+    if(diff < best_diff) {
+      best_diff = diff; best_psc = psc; best_arr = arr; best_rate = achieved;
+      if(diff == 0) break;
+    }
+  }
+  // Fallback: if not found (shouldn't happen) default to 1MHz base logic
+  if(best_diff == 0xFFFFFFFF) {
+    best_psc = (timer_clk / 1000000U) - 1U;
+    best_arr = (1000000U / target) - 1U;
+    best_rate = (timer_clk / (best_psc + 1U)) / (best_arr + 1U);
+  }
+
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = prescaler;
+  htim3.Init.Prescaler = best_psc;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = period;
+  htim3.Init.Period = best_arr;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   HAL_TIM_Base_Init(&htim3);
+
   // TRGO on update
   TIM_MasterConfigTypeDef mcfg = {0};
   mcfg.MasterOutputTrigger = TIM_TRGO_UPDATE;
   mcfg.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   HAL_TIMEx_MasterConfigSynchronization(&htim3, &mcfg);
+
+  // Optionally store or log achieved rate for diagnostics (user can watch in debugger)
+  (void)best_rate; // suppress unused warning if not inspected
 }
 
 static void adc_dual_init(void) {
@@ -76,7 +103,7 @@ static void adc_dual_init(void) {
   // Configure channels
   ADC_ChannelConfTypeDef sConfig = {0};
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_55CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_28CYCLES_5;
   sConfig.Channel = ADC_CHANNEL_0; // PA0
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
   sConfig.Channel = ADC_CHANNEL_1; // PA1

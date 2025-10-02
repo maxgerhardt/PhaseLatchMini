@@ -126,16 +126,21 @@ void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum) {
       if(hcdc->TxState) hcdc->TxState = 0; // unblock pipeline
       extern void cdc_force_tx_complete_hook(void);
       cdc_force_tx_complete_hook();
-      #if !defined(THROUGHPUT_BASELINE) || (THROUGHPUT_BASELINE==0)
-        #if !defined(ADC_SMOKE) || (ADC_SMOKE==0)
-          // Auto-schedule a tiny follow-up packet to keep host polling (disabled in baseline/smoke)
-          static uint8_t auto_ping[8] = { 'A','U','T','O',0,0,'\r','\n'};
-          auto_ping[4] = (uint8_t)(ll_datain_count & 0xFF);
-          auto_ping[5] = (uint8_t)(ep1_in_irqs & 0xFF);
-          if(hcdc->TxState==0) {
-            USBD_LL_Transmit(pdev, 0x81, auto_ping, sizeof(auto_ping));
-            hcdc->TxState = 1; // mark busy until callback
-          }
+      /* Disable auto_ping (tiny 8B packet) when ENABLE_IQ streaming is active to avoid
+         inserting short packets that reduce effective USB throughput. The original
+         logic attempted to keep the host polling, but continuous IQ streaming already
+         provides a steady flow of full 64B bulk packets. */
+      #if !ENABLE_IQ
+        #if !defined(THROUGHPUT_BASELINE) || (THROUGHPUT_BASELINE==0)
+          #if !defined(ADC_SMOKE) || (ADC_SMOKE==0)
+            static uint8_t auto_ping[8] = { 'A','U','T','O',0,0,'\r','\n'};
+            auto_ping[4] = (uint8_t)(ll_datain_count & 0xFF);
+            auto_ping[5] = (uint8_t)(ep1_in_irqs & 0xFF);
+            if(hcdc->TxState==0) {
+              USBD_LL_Transmit(pdev, 0x81, auto_ping, sizeof(auto_ping));
+              hcdc->TxState = 1; // mark busy until callback
+            }
+          #endif
         #endif
       #endif
       // Burst feeder for IQ streaming: immediately schedule next IQ packet if available
@@ -146,8 +151,9 @@ void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum) {
         extern USBD_HandleTypeDef hUsbDeviceFS;
         extern volatile uint32_t feed_isr_pkts; extern volatile uint32_t feed_chain_max; 
         extern volatile uint32_t feed_chain_current; 
-        // Limit chain depth per ISR to avoid starving main loop (e.g., up to 4 packets)
-  uint32_t chain = 0; const uint32_t chain_limit = 12; // increased from 4 to 12 for higher burst depth
+    // Limit chain depth per ISR to avoid starving main loop.
+    // Increased from 12 to 16 to permit larger burst drains while still bounded.
+    uint32_t chain = 0; const uint32_t chain_limit = 16; 
         while(ep1_busy_flag==0 && q_tail != q_head && chain < chain_limit) {
           iq_chunk_t chunk = q[q_tail];
           uint32_t send_bytes = chunk.words * 4U; if(send_bytes > 64) send_bytes = 64;

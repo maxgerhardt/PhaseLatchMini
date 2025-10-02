@@ -33,6 +33,7 @@ USBD_HandleTypeDef hUsbDeviceFS;
 static void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USB_DEVICE_Init(void);
+static void Quiet_Unused_Pins(void); // configure all currently unused GPIOs as analog to reduce digital switching noise
 
 #if ENABLE_IQ
 #include "iq_adc.h"
@@ -68,6 +69,8 @@ static void iq_cb(uint32_t *data, uint32_t count, uint8_t index) {
 int main(void) {
   HAL_Init();
   SystemClock_Config();
+  // Put all unused pins into analog mode early (after clocks, before enabling peripherals)
+  Quiet_Unused_Pins();
   MX_GPIO_Init();
   // Set LED low after GPIO init
   HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_RESET);
@@ -78,11 +81,6 @@ int main(void) {
     iq_init(iq_cb);
     iq_start();
   #endif
-  static uint8_t ramp_buf[64];
-  #if !ENABLE_IQ
-    for(int i=0;i<64;i++) ramp_buf[i]=(uint8_t)i;
-  #endif
-  uint32_t ramp_seq=0;
   static volatile uint32_t main_loop_heart = 0;
   while(1) {
     main_loop_heart++;
@@ -103,25 +101,10 @@ int main(void) {
     }
     extern uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
     extern USBD_HandleTypeDef hUsbDeviceFS;
-    USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-    #if !ENABLE_IQ
-      if(hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED && hcdc && hcdc->TxState==0) {
-        ramp_buf[0]=(uint8_t)ramp_seq;
-        ramp_buf[1]=(uint8_t)(ramp_seq>>8);
-        ramp_buf[2]=(uint8_t)(ramp_seq>>16);
-        ramp_buf[3]=(uint8_t)(ramp_seq>>24);
-        if(CDC_Transmit_FS(ramp_buf, sizeof(ramp_buf))==USBD_OK) {
-          ramp_seq++;
-        }
-      }
-    #endif
   // Forced low-level transmit spam removed (can be reintroduced if needed)
     // Invoke CDC diagnostic high-rate filler to attempt transfers and show stats
-    #if !defined(THROUGHPUT_BASELINE) || (THROUGHPUT_BASELINE==0)
-      CDC_Minimal_Task();
-      // Background poke disabled in throughput baseline to avoid 8B packet spam
-      CDC_Background_Poke();
-    #endif
+    /* CDC_Minimal_Task / Background_Poke disabled in IQ streaming build to avoid
+       inserting small diagnostic packets. */
     // Heartbeat & one-time early tick report after configuration
     // Single EARLYTICK report shortly after configuration when diagnostics enabled
 #if USB_TICK_DIAG
@@ -144,12 +127,10 @@ int main(void) {
         uint32_t icsr = SCB->ICSR;
         uint32_t prim = __get_PRIMASK();
         char et[160];
-        int en = snprintf(et,sizeof(et),
-          "TICKCHK %lu %lu DT=%lu CTRL=%08lX LOAD=%08lX VAL=%08lX ICSR=%08lX PRIM=%lu MLH=%lu\r\n",
-          (unsigned long)latched_tick0,(unsigned long)latched_tick1,
-          (unsigned long)(latched_tick1 - latched_tick0),
-          (unsigned long)ctrl,(unsigned long)load,(unsigned long)val,(unsigned long)icsr,(unsigned long)prim,(unsigned long)main_loop_heart);
-        CDC_Transmit_FS((uint8_t*)et,(uint16_t)en);
+        int en = snprintf(et,sizeof(et),"EARLYTICK CTRL=%08lX LOAD=%08lX VAL=%08lX ICSR=%08lX PRIM=%08lX MLH=%08lX T0=%lu T1=%lu\r\n",
+          (unsigned long)ctrl,(unsigned long)load,(unsigned long)val,(unsigned long)icsr,(unsigned long)prim,(unsigned long)main_loop_heart,
+          (unsigned long)latched_tick0,(unsigned long)latched_tick1);
+        if(en>0) CDC_Transmit_FS((uint8_t*)et,(uint16_t)en);
       }
     }
 #endif
@@ -246,6 +227,42 @@ static void MX_GPIO_Init(void) {
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_GPIO_PORT, &GPIO_InitStruct);
   HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, GPIO_PIN_RESET);
+}
+
+// Configure all currently unused pins as analog inputs (disables digital input buffers, reducing noise & consumption)
+// Leave: PA0/PA1 (ADC inputs), PA11/PA12 (USB D-/D+), PA13/PA14 (SWD), LED pin (PB12) configured by MX_GPIO_Init().
+// Also leave any pins that might be repurposed later easy to restore (e.g. USART1 PA9/PA10) – they are set analog here but can be reconfigured by user code.
+static void Quiet_Unused_Pins(void) {
+  // Enable clocks for ports we will touch
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_AFIO_CLK_ENABLE();
+
+  // Disable JTAG to free PB3, PB4, PA15 while keeping SWD (PA13/PA14) active for debugging
+  __HAL_AFIO_REMAP_SWJ_NOJTAG();
+
+  GPIO_InitTypeDef gi = {0};
+  gi.Mode = GPIO_MODE_ANALOG;
+  gi.Pull = GPIO_NOPULL; // analog mode ignores pull, but explicit
+
+  // Port A: keep PA0, PA1 (ADC), PA11, PA12 (USB), PA13, PA14 (SWD). Everything else analog.
+  uint16_t usedA = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_11 | GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14;
+  uint16_t allA  = 0xFFFF; // pins 0..15
+  uint16_t quietA = (uint16_t)(allA & ~usedA);
+  if(quietA) { gi.Pin = quietA; HAL_GPIO_Init(GPIOA, &gi); }
+
+  // Port B: keep PB12 (LED). Others analog (including freed JTAG pins PB3/PB4). If later adding peripherals adjust this mask.
+  uint16_t usedB = GPIO_PIN_12;
+  uint16_t allB  = 0xFFFF;
+  uint16_t quietB = (uint16_t)(allB & ~usedB);
+  if(quietB) { gi.Pin = quietB; HAL_GPIO_Init(GPIOB, &gi); }
+
+  // Port C: not used presently; set all to analog (common noise source: floating PC13..PC15 on some boards)
+  uint16_t usedC = 0; // none reserved
+  uint16_t allC  = 0xFFFF;
+  uint16_t quietC = (uint16_t)(allC & ~usedC);
+  if(quietC) { gi.Pin = quietC; HAL_GPIO_Init(GPIOC, &gi); }
 }
 
 static void SystemClock_Config(void) {
