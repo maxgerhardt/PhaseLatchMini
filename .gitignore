@@ -12,3 +12,5 @@ hardware/fp-info-cache
 hardware/PhaseLatchMini/fp-info-cache
 hardware/PhaseLatchMini/production/backups
 .DS_Store
+hardware/PhaseLatchMini/~PhaseLatchMini.kicad_sch.lck
+start.bin
