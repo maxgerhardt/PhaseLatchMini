@@ -6,6 +6,10 @@
 #include "usbd_cdc.h"
 #endif
 
+/* Exported runtime-achieved sample rate (I/Q pairs per second). Set in timer_trigger_init().
+ * Declared in Inc/iq_adc.h as extern. */
+volatile uint32_t iq_achieved_rate = 0;
+
 /* Buffer: each 32-bit entry holds I (lower 16) and Q (upper 16) */
 static volatile uint32_t iq_buffer[IQ_DMA_LENGTH];
 volatile uint32_t iq_dma_half_count = 0;
@@ -27,6 +31,7 @@ static void adc_gpio_init(void) {
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
+static volatile uint32_t iq_achieved_rate_local = 0; // internal holder
 static void timer_trigger_init(void) {
   __HAL_RCC_TIM3_CLK_ENABLE();
   uint32_t timer_clk = HAL_RCC_GetPCLK1Freq();
@@ -74,7 +79,10 @@ static void timer_trigger_init(void) {
   HAL_TIMEx_MasterConfigSynchronization(&htim3, &mcfg);
 
   // Optionally store or log achieved rate for diagnostics (user can watch in debugger)
-  (void)best_rate; // suppress unused warning if not inspected
+  iq_achieved_rate_local = best_rate;
+  /* Export to header-visible global so debugger or diagnostic inspection can
+   * read the actual achieved timer/sample rate without sending any CDC text. */
+  iq_achieved_rate = best_rate;
 }
 
 static void adc_dual_init(void) {

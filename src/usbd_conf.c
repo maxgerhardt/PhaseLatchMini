@@ -126,23 +126,8 @@ void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum) {
       if(hcdc->TxState) hcdc->TxState = 0; // unblock pipeline
       extern void cdc_force_tx_complete_hook(void);
       cdc_force_tx_complete_hook();
-      /* Disable auto_ping (tiny 8B packet) when ENABLE_IQ streaming is active to avoid
-         inserting short packets that reduce effective USB throughput. The original
-         logic attempted to keep the host polling, but continuous IQ streaming already
-         provides a steady flow of full 64B bulk packets. */
-      #if !ENABLE_IQ
-        #if !defined(THROUGHPUT_BASELINE) || (THROUGHPUT_BASELINE==0)
-          #if !defined(ADC_SMOKE) || (ADC_SMOKE==0)
-            static uint8_t auto_ping[8] = { 'A','U','T','O',0,0,'\r','\n'};
-            auto_ping[4] = (uint8_t)(ll_datain_count & 0xFF);
-            auto_ping[5] = (uint8_t)(ep1_in_irqs & 0xFF);
-            if(hcdc->TxState==0) {
-              USBD_LL_Transmit(pdev, 0x81, auto_ping, sizeof(auto_ping));
-              hcdc->TxState = 1; // mark busy until callback
-            }
-          #endif
-        #endif
-      #endif
+      /* auto_ping / small-status packets permanently removed to ensure the IN
+         bulk stream remains strictly binary under all build configs. */
       // Burst feeder for IQ streaming: immediately schedule next IQ packet if available
       #if defined(ENABLE_IQ) && (ENABLE_IQ==1)
         extern volatile uint8_t ep1_busy_flag; // already cleared

@@ -6,9 +6,13 @@
 // Target complex sample rate (I/Q pairs per second). Adjust as needed.
 // NOTE: Actual timer configuration will search prescaler/period for the closest
 // achievable rate to this target given TIM3 input clock and 16-bit limits.
-#define IQ_SAMPLE_RATE_HZ 220000U
+#define IQ_SAMPLE_RATE_HZ 210526U   
 #define IQ_BUFFER_PAIRS   1536U
 #define IQ_DMA_LENGTH     (IQ_BUFFER_PAIRS*2U)
+
+/* Achieved timer/sample rate after PSC/ARR search. Set at runtime in iq_adc.c.
+ * Exported so host/diagnostic builds can inspect or print it. */
+extern volatile uint32_t iq_achieved_rate;
 
 typedef void (*iq_callback_t)(uint32_t *data, uint32_t count, uint8_t index);
 

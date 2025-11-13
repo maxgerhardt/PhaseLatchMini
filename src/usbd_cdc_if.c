@@ -48,37 +48,16 @@ void USBD_CDC_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum);
 
 // Raw low-level transmit probe (bypasses CDC state machine) for debugging
 static void raw_in_ep_probe(void) {
-#if ENABLE_IQ
-  // Disabled in ADC streaming mode to avoid inserting ASCII into binary stream
-  return;
-#endif
-  extern USBD_HandleTypeDef hUsbDeviceFS;
-  if(hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) return;
-  PCD_HandleTypeDef *hpcd = (PCD_HandleTypeDef*)hUsbDeviceFS.pData;
-  if(!hpcd) return;
-  // Only fire if CDC reports idle to avoid overwriting active transfer
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-  if(hcdc && hcdc->TxState) return;
-  static uint8_t rawbuf[16];
-  static uint32_t rseq=0;
-  for(int i=0;i<16;i++) rawbuf[i] = (uint8_t)(0xA0 + ((rseq+i)&0x1F));
-  rseq++;
-  // Use core API (still goes through HAL_PCD_EP_Transmit) but with small size patterns
-  USBD_LL_Transmit(&hUsbDeviceFS, CDC_IN_EP, rawbuf, 16);
+  // Disabled: never inject probe bytes into the IN stream. Keep CDC strictly binary.
+  (void)0;
 }
 
 static int8_t CDC_Init_FS(void) {
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
-  // For pure ADC streaming builds (ENABLE_IQ) suppress initial ASCII banner to keep
-  // the bulk stream strictly binary (helps host alignment logic). Retain banner
-  // for non-ADC diagnostic / ramp environments so a terminal shows life immediately.
-#if !ENABLE_IQ
-  static const uint8_t init_msg[] = "BOOT\r\n";
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, (uint8_t*)init_msg, sizeof(init_msg)-1);
-  USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-#endif
+  // Initial ASCII banner intentionally removed to avoid any non-binary bytes
+  // being emitted on the CDC IN endpoint. Keep the stream strictly binary.
   // If core didn't allocate class data yet, point it to our static block
   if(hUsbDeviceFS.pClassData == NULL) {
     memset(&cdc_fallback,0,sizeof(cdc_fallback));
