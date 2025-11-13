@@ -6,13 +6,13 @@
 
 High-rate continuous streaming of interleaved dual ADC (I/Q) samples over USB Full‑Speed (FS) using only the built‑in CDC class on an STM32F103C8 ("Blue Pill" style) board. Companion Python host tools provide live visualization, FIFO bridging, raw capture, diagnostics, and throughput benchmarking.
 
-> Status: Actively optimized. Current configured complex sample rate target: **220 k I/Q samples/sec** (`IQ_SAMPLE_RATE_HZ` = 220000) with sustained USB payload throughput >500 KiB/s. Timer PSC/ARR are selected at runtime by a search routine for the closest achievable rate; observed effective rate is within a small delta of the target. ADC sampling time was reduced (now `ADC_SAMPLETIME_28CYCLES_5`) to reach this rate while maintaining conversion stability.
+> Status: Actively optimized. Current configured complex sample rate target: **210.5 k I/Q samples/sec** (`IQ_SAMPLE_RATE_HZ` = 210526) with sustained USB payload throughput >500 KiB/s. Timer PSC/ARR are selected at runtime by a search routine for the closest achievable rate; observed effective rate can be within a small delta of the target. ADC sampling time was reduced (now `ADC_SAMPLETIME_28CYCLES_5`) to reach this rate while maintaining conversion stability.
 
 > Origin / Intended Use: Initially developed as a lightweight streaming engine for the [PhaseLoom](https://github.com/AndersBNielsen/PhaseLoom) project, but fully usable with any dual (I/Q) analog front end producing baseband signals on two STM32F1 ADC channels.
 
 ---
 ## Hardware: PhaseLatch Mini
-A 4‑layer purple PCB (Blue Pill footprint inspired) integrating two SMA input ports and on‑board ~100 kHz low‑pass filtering (~200 kHz complex baseband bandwidth). Designed around the STM32F103C8 in dual regular simultaneous ADC mode (ADC1 + ADC2) to stream interleaved I/Q samples over USB Full-Speed.
+A 4‑layer purple PCB (Blue Pill footprint inspired) integrating two SMA input ports and on‑board ~100 kHz low‑pass filtering (~210 kHz complex baseband bandwidth). Designed around the STM32F103C8 in dual regular simultaneous ADC mode (ADC1 + ADC2) to stream interleaved I/Q samples over USB Full-Speed.
 
 ### Key Features
 - MCU: STM32F103C8 (72 MHz) LQFP‑48
@@ -59,7 +59,7 @@ Current passive network targets ~100 kHz corner. For alternative bandwidths:
 ## Firmware
 
 - Dual ADC synchronous sampling packed as 32-bit little-endian words (I 12-bit + Q 12-bit inside two 16-bit lanes)
-- Target sample rate `IQ_SAMPLE_RATE_HZ` (currently 220000) with dynamic TIM3 prescaler/period search (see `timer_trigger_init()` in `iq_adc.c`)
+- Target sample rate `IQ_SAMPLE_RATE_HZ` (currently 210526) with dynamic TIM3 prescaler/period search (see `timer_trigger_init()` in `iq_adc.c`)
 - ADC sampling time set to `ADC_SAMPLETIME_28CYCLES_5` for higher throughput (previous higher value limited rate)
 - Circular DMA with half / full transfer interrupts
 - Lock-free ring queue feeding USB transmit path
@@ -215,7 +215,7 @@ But most host paths should just mask & center at 2048.
 ## ADC / Timing Configuration
 
 - Timer configuration is dynamic: `timer_trigger_init()` iterates prescaler values to find an ARR producing a rate closest to `IQ_SAMPLE_RATE_HZ`.
-- Current target: 220000 samples/sec (complex pairs). Achieved rate is printed only via manual inspection (no direct text output yet); you can instrument `(best_rate)` variable in debugger if needed.
+- Current target: 210526 samples/sec (complex pairs). Achieved rate is printed only via manual inspection (no direct text output yet); you can instrument `(best_rate)` variable in debugger if needed.
 - ADC sampling time currently `ADC_SAMPLETIME_28CYCLES_5`; lowering further increases throughput but may degrade SNR and settling for higher source impedances.
 
 Potential Adjustments:
@@ -264,15 +264,13 @@ Use `host_diagnostics.py stats` for legacy STAT delta interpretation, if enabled
 | `host_probe.py` | Placeholder for future probing tools |
 
 ### GQRX Integration (via FIFO)
-- Set GQRX sample rate to match `IQ_SAMPLE_RATE_HZ` (e.g. 220000) or the nearest supported value.
+- Set GQRX sample rate to match `IQ_SAMPLE_RATE_HZ` (e.g. 210526) or the nearest supported value.
 1. Run FIFO bridge:
    ```
-   python host_iq_fifo.py --fifo /tmp/iq.fifo --format cf32 --prebuffer 0.25
+   python3 host_iq_fifo.py --fifo /tmp/iq_cf32.iq
    ```
-2. In GQRX, set input to "UDP / File" or external source capable of reading named FIFO (Linux/macOS). Point to `/tmp/iq.fifo` with sample rate = `166667`.
+2. In GQRX, set input to "UDP / File" or external source capable of reading named FIFO (Linux/macOS). Point to `/tmp/iq_cf32.fifo` with sample rate = `210526`.
 3. Adjust gain/AGC in GQRX; confirm spectrum updates.
-
-For unsigned 8-bit path (experimental), use `--format u8` and configure GQRX for `uint8 IQ` (if supported) or convert externally.
 
 ### Live View
 ```
@@ -317,7 +315,7 @@ Interpretation updates:
 
 ---
 ## Roadmap / Future Ideas
-- Maintain or push beyond 220 kS/s (USB packing & endpoint tuning)
+- Maintain or push beyond 210 kS/s (USB packing & endpoint tuning)
 - Optional tighter 24-bit (3-byte) packing (I12|Q12) – reduces bandwidth ~25%
 - Vendor RAW class endpoint for marginal gains over CDC ACM
 - Lightweight CRC / sequence tags for host-side drop detection
