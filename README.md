@@ -8,7 +8,8 @@ High-rate continuous streaming of interleaved dual ADC (I/Q) samples over USB Fu
 
 > Status: Actively optimized. Current configured complex sample rate target: **210.5 k I/Q samples/sec** (`IQ_SAMPLE_RATE_HZ` = 210526) with sustained USB payload throughput >500 KiB/s. Timer PSC/ARR are selected at runtime by a search routine for the closest achievable rate; observed effective rate can be within a small delta of the target. ADC sampling time was reduced (now `ADC_SAMPLETIME_28CYCLES_5`) to reach this rate while maintaining conversion stability.
 
-> Origin / Intended Use: Initially developed as a lightweight streaming engine for the [PhaseLoom](https://github.com/AndersBNielsen/PhaseLoom) project, but fully usable with any dual (I/Q) analog front end producing baseband signals on two STM32F1 ADC channels.
+> Origin / Intended Use: Initially developed as a lightweight streaming engine for the [PhaseLoom](https://github.com/AndersBNielsen/PhaseLoom) project, but fully usable with any dual (I/Q) analog front end producing baseband signals on two STM32F1 ADC channels. 
+Note: Phaseloom should be modified for best performance. Replace 22kOhm feedback caps with matched 47kOhm resistors and replace the output stage 50 ohms with 0 ohm. 
 
 ---
 ## Hardware: PhaseLatch Mini
