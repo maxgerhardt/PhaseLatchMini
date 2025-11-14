@@ -9,11 +9,15 @@ High-rate continuous streaming of interleaved dual ADC (I/Q) samples over USB Fu
 > Status: Actively optimized. Current configured complex sample rate target: **210.5 k I/Q samples/sec** (`IQ_SAMPLE_RATE_HZ` = 210526) with sustained USB payload throughput >500 KiB/s. Timer PSC/ARR are selected at runtime by a search routine for the closest achievable rate; observed effective rate can be within a small delta of the target. ADC sampling time was reduced (now `ADC_SAMPLETIME_28CYCLES_5`) to reach this rate while maintaining conversion stability.
 
 > Origin / Intended Use: Initially developed as a lightweight streaming engine for the [PhaseLoom](https://github.com/AndersBNielsen/PhaseLoom) project, but fully usable with any dual (I/Q) analog front end producing baseband signals on two STM32F1 ADC channels. 
-Note: Phaseloom should be modified for best performance. Replace 22kOhm feedback caps with matched 47kOhm resistors and replace the output stage 50 ohms with 0 ohm. 
+Note: Phaseloom should be modified for best performance. Replace 22kOhm feedback caps with matched 47kOhm resistors and replace the output stage 50 ohms with 0 ohm.
+
+https://www.youtube.com/watch?v=UEAtSE1PV44
 
 ---
 ## Hardware: PhaseLatch Mini
 A 4‑layer purple PCB (Blue Pill footprint inspired) integrating two SMA input ports and on‑board ~100 kHz low‑pass filtering (~210 kHz complex baseband bandwidth). Designed around the STM32F103C8 in dual regular simultaneous ADC mode (ADC1 + ADC2) to stream interleaved I/Q samples over USB Full-Speed.
+
+<img src="https://www.imania.dk/product_thumb.php?img=mediafiles/images/produkter/phaselatchmini-frontview.jpeg&w=360&h=360" alt="PhaseLatch Mini" style="width: 220px;">
 
 ### Key Features
 - MCU: STM32F103C8 (72 MHz) LQFP‑48
